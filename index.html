@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>語音轉文字工具 (Speech to Text)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 圖示庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        /* 錄音脈衝動畫 */
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .recording-pulse {
+            animation: pulse-ring 1.8s infinite cubic-bezier(0.45, 0, 0.55, 1);
+        }
+
+        /* 聲波音軌動畫 */
+        @keyframes sound-wave {
+            0%, 100% { height: 6px; }
+            50% { height: 24px; }
+        }
+
+        .wave-bar {
+            width: 4px;
+            background-color: #ef4444;
+            border-radius: 9999px;
+            display: inline-block;
+            animation: sound-wave 1.2s ease-in-out infinite;
+        }
+
+        .wave-bar:nth-child(1) { animation-delay: 0.0s; }
+        .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+        .wave-bar:nth-child(3) { animation-delay: 0.4s; }
+        .wave-bar:nth-child(4) { animation-delay: 0.1s; }
+        .wave-bar:nth-child(5) { animation-delay: 0.3s; }
+
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <!-- Toast 提示訊息彈窗 -->
+    <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 ease-in-out bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 pointer-events-none">
+        <i id="toast-icon" class="fas fa-check-circle text-emerald-400 text-lg"></i>
+        <span id="toast-msg" class="text-sm font-medium">訊息內容</span>
+    </div>
+
+    <!-- 主要內容區塊 -->
+    <div class="max-w-4xl w-full mx-auto px-4 py-8 sm:px-6 lg:px-8 flex-grow flex flex-col">
+        
+        <!-- 頁首標題 -->
+        <header class="mb-8 text-center sm:text-left flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight flex items-center justify-center sm:justify-start gap-3">
+                    <span class="p-2 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">
+                        <i class="fas fa-microphone-alt"></i>
+                    </span>
+                    語音轉文字筆記
+                </h1>
+                <p class="text-sm text-slate-500 mt-1">運用瀏覽器 AI 語音辨識技術，將說話內容即時轉為文字</p>
+            </div>
+            
+            <!-- 語言選擇器 -->
+            <div class="mt-4 sm:mt-0 flex items-center justify-center">
+                <div class="relative w-full sm:w-auto">
+                    <label for="language-select" class="sr-only">選擇辨識語言</label>
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                        <i class="fas fa-globe"></i>
+                    </div>
+                    <select id="language-select" class="block w-full sm:w-auto pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors cursor-pointer">
+                        <option value="zh-TW" selected>繁體中文 (台灣)</option>
+                        <option value="zh-CN">簡體中文 (中國)</option>
+                        <option value="en-US">English (United States)</option>
+                        <option value="ja-JP">日本語 (日本)</option>
+                        <option value="ko-KR">한국어 (韓國)</option>
+                        <option value="cantonese">粵語 (香港)</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- 不支援 Web Speech API 的警告提示 -->
+        <div id="unsupported-warning" class="hidden mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-sm">
+            <div class="flex items-start">
+                <div class="flex-shrink-0 text-amber-500">
+                    <i class="fas fa-exclamation-triangle text-xl"></i>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-semibold text-amber-800">您的瀏覽器不支援語音辨識</h3>
+                    <p class="text-xs text-amber-700 mt-1">請改用最新版本的 Google Chrome、Microsoft Edge 或 Safari 瀏覽器以使用完整功能。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 狀態顯示卡片與主控制按鈕 -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 mb-6 transition-all">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                
+                <!-- 狀態指示器 -->
+                <div class="flex items-center space-x-3 w-full sm:w-auto justify-center sm:justify-start">
+                    <div id="status-badge" class="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold tracking-wide">
+                        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                        <span id="status-text">準備就緒</span>
+                    </div>
+
+                    <!-- 錄音動態聲波 (預設隱藏) -->
+                    <div id="sound-wave-container" class="hidden items-center space-x-1 h-6 px-2">
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                    </div>
+                </div>
+
+                <!-- 控制按鈕區 (開始/停止錄音) -->
+                <div class="flex items-center gap-3 w-full sm:w-auto justify-center">
+                    <button id="toggle-record-btn" class="w-full sm:w-auto flex-1 sm:flex-initial flex items-center justify-center space-x-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl shadow-md shadow-indigo-200 hover:shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i id="record-btn-icon" class="fas fa-microphone"></i>
+                        <span id="record-btn-text">開始錄音</span>
+                    </button>
+                    
+                    <button id="stop-record-btn" disabled class="hidden flex-1 sm:flex-initial items-center justify-center space-x-2 px-5 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-sm rounded-xl transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <i class="fas fa-stop"></i>
+                        <span>停止</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 轉寫文字內容區塊 -->
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex-grow flex flex-col overflow-hidden">
+            
+            <!-- 工具列：字級調整、複製、下載、清除 -->
+            <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/50 flex-wrap gap-2">
+                <div class="flex items-center space-x-2 text-slate-500 text-xs">
+                    <span class="font-medium text-slate-600">文字大小：</span>
+                    <button id="btn-font-sm" class="w-7 h-7 rounded-lg hover:bg-slate-200 flex items-center justify-center text-xs font-bold transition-colors">A-</button>
+                    <button id="btn-font-md" class="w-7 h-7 rounded-lg bg-slate-200 font-bold flex items-center justify-center text-xs text-indigo-600">A</button>
+                    <button id="btn-font-lg" class="w-7 h-7 rounded-lg hover:bg-slate-200 flex items-center justify-center text-sm font-bold transition-colors">A+</button>
+                </div>
+
+                <div class="flex items-center space-x-1 sm:space-x-2">
+                    <button id="btn-copy" class="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center space-x-1.5">
+                        <i class="far fa-copy"></i>
+                        <span>複製文字</span>
+                    </button>
+                    <button id="btn-download" class="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center space-x-1.5">
+                        <i class="fas fa-download"></i>
+                        <span>下載 txt</span>
+                    </button>
+                    <button id="btn-clear" class="px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition-colors flex items-center space-x-1.5">
+                        <i class="far fa-trash-alt"></i>
+                        <span>清除內容</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 文字輸出展示視窗 -->
+            <div id="transcript-container" class="p-6 flex-grow overflow-y-auto min-h-[300px] max-h-[500px] text-base leading-relaxed text-slate-800 space-y-2 select-text">
+                <!-- 預設提示內容 -->
+                <div id="placeholder-text" class="h-full flex flex-col items-center justify-center text-slate-400 py-12">
+                    <i class="fas fa-comment-dots text-4xl mb-3 text-slate-300"></i>
+                    <p class="text-sm font-medium">點擊「開始錄音」並開始說話...</p>
+                    <p class="text-xs text-slate-400 mt-1">辨識後的文字將會即時顯示在這裡</p>
+                </div>
+                
+                <!-- 已確定的文字區域 -->
+                <span id="final-text" class="whitespace-pre-wrap"></span>
+                
+                <!-- 即時辨識中的文字 (灰色、斜體) -->
+                <span id="interim-text" class="text-indigo-500 italic font-normal bg-indigo-50/60 px-1 rounded transition-all"></span>
+            </div>
+
+            <!-- 底欄：統計資訊 -->
+            <div class="px-6 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs text-slate-400">
+                <div class="flex items-center space-x-4">
+                    <span>字數統計：<strong id="char-count" class="text-slate-600 font-semibold">0</strong> 字</span>
+                    <span>總段落：<strong id="para-count" class="text-slate-600 font-semibold">0</strong> 段</span>
+                </div>
+                <div id="auto-scroll-indicator" class="flex items-center space-x-1 text-slate-400">
+                    <i class="fas fa-arrow-down text-[10px]"></i>
+                    <span>自動捲動</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 頁尾 -->
+    <footer class="py-4 text-center text-xs text-slate-400 border-t border-slate-200/60 bg-white">
+        <p>基於 Web Speech API 開發 • 隱私安全：所有語音辨識均在客戶端與瀏覽器原生處理</p>
+    </footer>
+
+    <!-- JavaScript 核心邏輯 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM 元素引用
+            const toggleRecordBtn = document.getElementById('toggle-record-btn');
+            const recordBtnIcon = document.getElementById('record-btn-icon');
+            const recordBtnText = document.recordBtnText || document.getElementById('record-btn-text');
+            const stopRecordBtn = document.getElementById('stop-record-btn');
+            
+            const languageSelect = document.getElementById('language-select');
+            const statusBadge = document.getElementById('status-badge');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const soundWaveContainer = document.getElementById('sound-wave-container');
+            const unsupportedWarning = document.getElementById('unsupported-warning');
+
+            const transcriptContainer = document.getElementById('transcript-container');
+            const placeholderText = document.getElementById('placeholder-text');
+            const finalTextEl = document.getElementById('final-text');
+            const interimTextEl = document.getElementById('interim-text');
+
+            const btnCopy = document.getElementById('btn-copy');
+            const btnDownload = document.getElementById('btn-download');
+            const btnClear = document.getElementById('btn-clear');
+            
+            const btnFontSm = document.getElementById('btn-font-sm');
+            const btnFontMd = document.getElementById('btn-font-md');
+            const btnFontLg = document.getElementById('btn-font-lg');
+
+            const charCountEl = document.getElementById('char-count');
+            const paraCountEl = document.getElementById('para-count');
+
+            // 狀態變數
+            let isRecording = false;
+            let recognition = null;
+            let finalTranscript = '';
+            let interimTranscript = '';
+
+            // 檢查瀏覽器是否支援 Web Speech API
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+            if (!SpeechRecognition) {
+                unsupportedWarning.classList.remove('hidden');
+                toggleRecordBtn.disabled = true;
+                updateStatus('unsupported', '不支援此瀏覽器');
+            } else {
+                initSpeechRecognition();
+            }
+
+            // 初始化 Speech Recognition
+            function initSpeechRecognition() {
+                recognition = new SpeechRecognition();
+                recognition.continuous = true;     // 持續聆聽
+                recognition.interimResults = true;  // 取得即時臨時結果
+                recognition.lang = languageSelect.value;
+
+                // 開始辨識事件
+                recognition.onstart = () => {
+                    isRecording = true;
+                    updateUIState(true);
+                    updateStatus('recording', '正在聆聽中...');
+                    showToast('已開始錄音', 'success');
+                };
+
+                // 收到辨識結果
+                recognition.onresult = (event) => {
+                    interimTranscript = '';
+
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            // 當結果為最終判定的語句時，追加到 finalTranscript
+                            finalTranscript += transcript + '。\n';
+                        } else {
+                            // 即時辨識中的臨時文字
+                            interimTranscript += transcript;
+                        }
+                    }
+
+                    renderText();
+                };
+
+                // 發生錯誤處理
+                recognition.onerror = (event) => {
+                    console.error('語音辨識錯誤：', event.error);
+                    if (event.error === 'no-speech') {
+                        // 沒聽到聲音時不強制關閉，僅提示或忽略
+                        return;
+                    }
+                    if (event.error === 'not-allowed') {
+                        showToast('麥克風權限被拒絕', 'error');
+                        updateStatus('error', '麥克風被封鎖');
+                    } else {
+                        showToast('辨識發生錯誤: ' + event.error, 'error');
+                        updateStatus('error', '辨識錯誤');
+                    }
+                    stopRecording();
+                };
+
+                // 辨識中斷事件 (例如使用者長時間沒說話或網路抖動)
+                recognition.onend = () => {
+                    // 如果使用者沒有主動按停止，則自動重連保持持續錄音
+                    if (isRecording) {
+                        try {
+                            recognition.start();
+                        } catch (e) {
+                            console.log('重連錄音中...', e);
+                        }
+                    } else {
+                        updateUIState(false);
+                        updateStatus('stopped', '已停止錄音');
+                    }
+                };
+            }
+
+            // 開始錄音
+            function startRecording() {
+                if (!recognition) return;
+                try {
+                    recognition.lang = languageSelect.value;
+                    recognition.start();
+                } catch (e) {
+                    console.error('無法啟動錄音：', e);
+                }
+            }
+
+            // 停止錄音
+            function stopRecording() {
+                isRecording = false;
+                if (recognition) {
+                    recognition.stop();
+                }
+                updateUIState(false);
+                updateStatus('stopped', '已停止錄音');
+                showToast('已停止錄音', 'info');
+            }
+
+            // 渲染文字內容與更新字數
+            function renderText() {
+                // 如果已有內容，隱藏預設提示
+                if (finalTranscript || interimTranscript) {
+                    placeholderText.classList.add('hidden');
+                } else {
+                    placeholderText.classList.remove('hidden');
+                }
+
+                finalTextEl.textContent = finalTranscript;
+                interimTextEl.textContent = interimTranscript;
+
+                // 更新字數與段落統計
+                const cleanText = finalTranscript.replace(/\s+/g, '');
+                charCountEl.textContent = cleanText.length;
+
+                const paragraphs = finalTranscript.split('\n').filter(p => p.trim().length > 0);
+                paraCountEl.textContent = paragraphs.length;
+
+                // 自動捲動到底部
+                transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
+            }
+
+            // 更新 UI 狀態 (按鈕圖示、動態等)
+            function updateUIState(recording) {
+                if (recording) {
+                    toggleRecordBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'shadow-indigo-200');
+                    toggleRecordBtn.classList.add('bg-rose-600', 'hover:bg-rose-700', 'shadow-rose-200', 'recording-pulse');
+                    recordBtnIcon.className = 'fas fa-pause';
+                    recordBtnText.textContent = '暫停錄音';
+
+                    stopRecordBtn.classList.remove('hidden');
+                    stopRecordBtn.removeAttribute('disabled');
+                    soundWaveContainer.classList.remove('hidden');
+                    soundWaveContainer.classList.add('flex');
+                    languageSelect.disabled = true; // 錄音中停用切換語言
+                } else {
+                    toggleRecordBtn.classList.remove('bg-rose-600', 'hover:bg-rose-700', 'shadow-rose-200', 'recording-pulse');
+                    toggleRecordBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700', 'shadow-indigo-200');
+                    recordBtnIcon.className = 'fas fa-microphone';
+                    recordBtnText.textContent = '開始錄音';
+
+                    stopRecordBtn.classList.add('hidden');
+                    stopRecordBtn.setAttribute('disabled', 'true');
+                    soundWaveContainer.classList.remove('flex');
+                    soundWaveContainer.classList.add('hidden');
+                    languageSelect.disabled = false;
+                }
+            }
+
+            // 更新狀態指示標籤
+            function updateStatus(type, text) {
+                statusText.textContent = text;
+
+                // 清除舊樣式
+                statusBadge.className = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ';
+                statusDot.className = 'w-2.5 h-2.5 rounded-full ';
+
+                switch (type) {
+                    case 'recording':
+                        statusBadge.classList.add('bg-rose-50', 'text-rose-700', 'border', 'border-rose-200');
+                        statusDot.classList.add('bg-rose-500', 'animate-ping');
+                        break;
+                    case 'stopped':
+                        statusBadge.classList.add('bg-slate-100', 'text-slate-600');
+                        statusDot.classList.add('bg-slate-400');
+                        break;
+                    case 'unsupported':
+                    case 'error':
+                        statusBadge.classList.add('bg-amber-50', 'text-amber-700', 'border', 'border-amber-200');
+                        statusDot.classList.add('bg-amber-500');
+                        break;
+                    default:
+                        statusBadge.classList.add('bg-slate-100', 'text-slate-600');
+                        statusDot.classList.add('bg-slate-400');
+                }
+            }
+
+            // 事件接聽：開始/暫停按鈕
+            toggleRecordBtn.addEventListener('click', () => {
+                if (isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            });
+
+            // 事件接聽：停止按鈕
+            stopRecordBtn.addEventListener('click', () => {
+                stopRecording();
+            });
+
+            // 事件接聽：語言切換
+            languageSelect.addEventListener('change', () => {
+                if (recognition) {
+                    recognition.lang = languageSelect.value;
+                    showToast(`已切換語言`, 'info');
+                }
+            });
+
+            // 清除文字
+            btnClear.addEventListener('click', () => {
+                if (!finalTranscript && !interimTranscript) return;
+
+                finalTranscript = '';
+                interimTranscript = '';
+                renderText();
+                showToast('已清除所有內容', 'info');
+            });
+
+            // 複製文字至剪貼簿
+            btnCopy.addEventListener('click', () => {
+                const textToCopy = finalTranscript + (interimTranscript ? interimTranscript : '');
+                
+                if (!textToCopy.trim()) {
+                    showToast('沒有可複製的文字', 'error');
+                    return;
+                }
+
+                // 使用相容性較佳的複製方式
+                const textarea = document.createElement('textarea');
+                textarea.value = textToCopy;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                
+                try {
+                    document.execCommand('copy');
+                    showToast('已成功複製到剪貼簿！', 'success');
+                } catch (err) {
+                    showToast('複製失敗，請手動複製', 'error');
+                } finally {
+                    document.body.removeChild(textarea);
+                }
+            });
+
+            // 下載文字為 .txt 檔案
+            btnDownload.addEventListener('click', () => {
+                const textToDownload = finalTranscript + (interimTranscript ? interimTranscript : '');
+
+                if (!textToDownload.trim()) {
+                    showToast('沒有可下載的文字內容', 'error');
+                    return;
+                }
+
+                const blob = new Blob([textToDownload], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                
+                // 取得目前日期時間格式作為檔名
+                const now = new Date();
+                const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+                
+                a.href = url;
+                a.download = `語音轉寫紀錄_${dateStr}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showToast('已開始下載文件', 'success');
+            });
+
+            // 字體大小調整控制
+            const updateFontSizeButtons = (activeBtn) => {
+                [btnFontSm, btnFontMd, btnFontLg].forEach(btn => {
+                    btn.classList.remove('bg-slate-200', 'text-indigo-600');
+                    btn.classList.add('hover:bg-slate-200');
+                });
+                activeBtn.classList.add('bg-slate-200', 'text-indigo-600');
+            };
+
+            btnFontSm.addEventListener('click', () => {
+                transcriptContainer.className = transcriptContainer.className.replace(/text-\w+/, 'text-sm');
+                updateFontSizeButtons(btnFontSm);
+            });
+
+            btnFontMd.addEventListener('click', () => {
+                transcriptContainer.className = transcriptContainer.className.replace(/text-\w+/, 'text-base');
+                updateFontSizeButtons(btnFontMd);
+            });
+
+            btnFontLg.addEventListener('click', () => {
+                transcriptContainer.className = transcriptContainer.className.replace(/text-\w+/, 'text-lg');
+                updateFontSizeButtons(btnFontLg);
+            });
+
+            // Toast 提示訊息處理函數
+            let toastTimeout = null;
+            function showToast(message, type = 'info') {
+                const toast = document.getElementById('toast');
+                const toastMsg = document.getElementById('toast-msg');
+                const toastIcon = document.getElementById('toast-icon');
+
+                toastMsg.textContent = message;
+
+                // 設定圖示與顏色
+                if (type === 'success') {
+                    toastIcon.className = 'fas fa-check-circle text-emerald-400 text-lg';
+                } else if (type === 'error') {
+                    toastIcon.className = 'fas fa-exclamation-circle text-rose-400 text-lg';
+                } else {
+                    toastIcon.className = 'fas fa-info-circle text-sky-400 text-lg';
+                }
+
+                // 顯示 Toast
+                toast.classList.remove('translate-y-[-100px]', 'opacity-0');
+                toast.classList.add('translate-y-0', 'opacity-100');
+
+                if (toastTimeout) clearTimeout(toastTimeout);
+
+                toastTimeout = setTimeout(() => {
+                    toast.classList.remove('translate-y-0', 'opacity-100');
+                    toast.classList.add('translate-y-[-100px]', 'opacity-0');
+                }, 2800);
+            }
+        });
+    </script>
+</body>
+</html>

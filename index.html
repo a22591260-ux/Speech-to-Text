@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>語音轉文字工具 (Speech to Text)</title>
+    <title>離線語音轉文字 (Whisper On-Device AI)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome 圖示庫 -->
@@ -12,48 +12,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
-        /* 錄音脈衝動畫 */
-        @keyframes pulse-ring {
-            0% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-            }
-            70% {
-                transform: scale(1);
-                box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
-            }
-            100% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-            }
+        /* 波形動畫裝飾 */
+        @keyframes pulse-light {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.85; transform: scale(1.02); }
         }
-
         .recording-pulse {
-            animation: pulse-ring 1.8s infinite cubic-bezier(0.45, 0, 0.55, 1);
+            animation: pulse-light 1.5s infinite ease-in-out;
         }
-
-        /* 聲波音軌動畫 */
-        @keyframes sound-wave {
-            0%, 100% { height: 6px; }
-            50% { height: 24px; }
-        }
-
-        .wave-bar {
-            width: 4px;
-            background-color: #ef4444;
-            border-radius: 9999px;
-            display: inline-block;
-            animation: sound-wave 1.2s ease-in-out infinite;
-        }
-
-        .wave-bar:nth-child(1) { animation-delay: 0.0s; }
-        .wave-bar:nth-child(2) { animation-delay: 0.2s; }
-        .wave-bar:nth-child(3) { animation-delay: 0.4s; }
-        .wave-bar:nth-child(4) { animation-delay: 0.1s; }
-        .wave-bar:nth-child(5) { animation-delay: 0.3s; }
 
         /* 自訂捲軸 */
         ::-webkit-scrollbar {
@@ -74,99 +43,144 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
 
-    <!-- Toast 提示訊息彈窗 -->
+    <!-- Toast 訊息提示面板 -->
     <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 ease-in-out bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 pointer-events-none">
         <i id="toast-icon" class="fas fa-check-circle text-emerald-400 text-lg"></i>
         <span id="toast-msg" class="text-sm font-medium">訊息內容</span>
     </div>
 
-    <!-- 主要內容區塊 -->
+    <!-- 主容器 -->
     <div class="max-w-4xl w-full mx-auto px-4 py-8 sm:px-6 lg:px-8 flex-grow flex flex-col">
         
         <!-- 頁首標題 -->
-        <header class="mb-8 text-center sm:text-left flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5">
+        <header class="mb-6 text-center sm:text-left flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5 gap-4">
             <div>
                 <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight flex items-center justify-center sm:justify-start gap-3">
-                    <span class="p-2 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-200">
-                        <i class="fas fa-microphone-alt"></i>
+                    <span class="p-2.5 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-200">
+                        <i class="fas fa-microchip text-xl"></i>
                     </span>
-                    語音轉文字筆記
+                    離線語音轉文字筆記
                 </h1>
-                <p class="text-sm text-slate-500 mt-1">運用瀏覽器 AI 語音辨識技術，將說話內容即時轉為文字</p>
+                <p class="text-xs sm:text-sm text-slate-500 mt-1 flex items-center justify-center sm:justify-start gap-1.5">
+                    <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                    使用 Transformers.js + OpenAI Whisper (純端側辨識 / 免伺服器)
+                </p>
             </div>
             
-            <!-- 語言選擇器 -->
-            <div class="mt-4 sm:mt-0 flex items-center justify-center">
-                <div class="relative w-full sm:w-auto">
-                    <label for="language-select" class="sr-only">選擇辨識語言</label>
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                        <i class="fas fa-globe"></i>
-                    </div>
-                    <select id="language-select" class="block w-full sm:w-auto pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors cursor-pointer">
-                        <option value="zh-TW" selected>繁體中文 (台灣)</option>
-                        <option value="zh-CN">簡體中文 (中國)</option>
-                        <option value="en-US">English (United States)</option>
-                        <option value="ja-JP">日本語 (日本)</option>
-                        <option value="ko-KR">한국어 (韓國)</option>
-                        <option value="cantonese">粵語 (香港)</option>
+            <!-- 選項設定卡片 -->
+            <div class="flex items-center justify-center gap-3 bg-white p-2 border border-slate-200 rounded-xl shadow-sm">
+                <!-- 模型選擇 -->
+                <div class="flex flex-col text-left">
+                    <label for="model-select" class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">Whisper 模型</label>
+                    <select id="model-select" class="bg-transparent text-xs font-semibold text-slate-700 pr-6 py-1 focus:outline-none cursor-pointer">
+                        <option value="Xenova/whisper-tiny" selected>Whisper Tiny (極快 / ~39MB)</option>
+                        <option value="Xenova/whisper-base">Whisper Base (較準 / ~73MB)</option>
+                        <option value="Xenova/whisper-small">Whisper Small (精準 / ~240MB)</option>
+                    </select>
+                </div>
+
+                <div class="h-6 w-[1px] bg-slate-200"></div>
+
+                <!-- 目標語言 -->
+                <div class="flex flex-col text-left">
+                    <label for="language-select" class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">辨識語言</label>
+                    <select id="language-select" class="bg-transparent text-xs font-semibold text-slate-700 pr-6 py-1 focus:outline-none cursor-pointer">
+                        <option value="chinese" selected>中文 (Chinese)</option>
+                        <option value="english">英文 (English)</option>
+                        <option value="japanese">日文 (Japanese)</option>
+                        <option value="korean">韓文 (Korean)</option>
+                        <option value="cantonese">粵語 (Cantonese)</option>
                     </select>
                 </div>
             </div>
         </header>
 
-        <!-- 不支援 Web Speech API 的警告提示 -->
-        <div id="unsupported-warning" class="hidden mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl shadow-sm">
-            <div class="flex items-start">
-                <div class="flex-shrink-0 text-amber-500">
-                    <i class="fas fa-exclamation-triangle text-xl"></i>
+        <!-- 模型載入進度面板 -->
+        <div id="model-status-card" class="mb-6 bg-white border border-indigo-100 rounded-2xl p-4 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center space-x-2">
+                    <i id="model-status-icon" class="fas fa-download text-indigo-500 animate-bounce"></i>
+                    <span id="model-status-text" class="text-xs sm:text-sm font-semibold text-slate-700">準備下載模型模型檔案...</span>
                 </div>
-                <div class="ml-3">
-                    <h3 class="text-sm font-semibold text-amber-800">您的瀏覽器不支援語音辨識</h3>
-                    <p class="text-xs text-amber-700 mt-1">請改用最新版本的 Google Chrome、Microsoft Edge 或 Safari 瀏覽器以使用完整功能。</p>
-                </div>
+                <span id="model-progress-percent" class="text-xs font-bold text-indigo-600">0%</span>
             </div>
+            <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div id="model-progress-bar" class="bg-indigo-600 h-2 rounded-full transition-all duration-300 w-0"></div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">
+                <i class="fas fa-info-circle mr-1"></i>模型下載後會自動快取於瀏覽器（IndexedDB），下次即可完全離線秒開使用。
+            </p>
         </div>
 
-        <!-- 狀態顯示卡片與主控制按鈕 -->
-        <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 mb-6 transition-all">
-            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-                
-                <!-- 狀態指示器 -->
-                <div class="flex items-center space-x-3 w-full sm:w-auto justify-center sm:justify-start">
-                    <div id="status-badge" class="flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold tracking-wide">
-                        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                        <span id="status-text">準備就緒</span>
+        <!-- 主控制板與錄音/上傳 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            
+            <!-- 錄音卡片 -->
+            <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fas fa-microphone text-rose-500"></i>
+                            即時麥克風錄音
+                        </h2>
+                        <span id="rec-status-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500">
+                            未啟動
+                        </span>
                     </div>
 
-                    <!-- 錄音動態聲波 (預設隱藏) -->
-                    <div id="sound-wave-container" class="hidden items-center space-x-1 h-6 px-2">
-                        <span class="wave-bar"></span>
-                        <span class="wave-bar"></span>
-                        <span class="wave-bar"></span>
-                        <span class="wave-bar"></span>
-                        <span class="wave-bar"></span>
+                    <!-- 即時音量波形卡片 -->
+                    <div class="bg-slate-900 rounded-xl p-3 mb-4 flex items-center justify-center h-16 relative overflow-hidden">
+                        <canvas id="visualizer-canvas" class="w-full h-full block"></canvas>
+                        <div id="rec-timer" class="absolute right-3 bottom-2 text-[10px] font-mono text-indigo-300/80">00:00</div>
                     </div>
                 </div>
 
-                <!-- 控制按鈕區 (開始/停止錄音) -->
-                <div class="flex items-center gap-3 w-full sm:w-auto justify-center">
-                    <button id="toggle-record-btn" class="w-full sm:w-auto flex-1 sm:flex-initial flex items-center justify-center space-x-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl shadow-md shadow-indigo-200 hover:shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i id="record-btn-icon" class="fas fa-microphone"></i>
-                        <span id="record-btn-text">開始錄音</span>
+                <!-- 錄音控制按鈕 -->
+                <div class="flex items-center gap-2">
+                    <button id="btn-record-start" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs sm:text-sm py-2.5 px-3 rounded-xl transition-all shadow-md shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                        <i class="fas fa-circle text-rose-400 text-xs"></i>
+                        <span>開始錄音</span>
                     </button>
-                    
-                    <button id="stop-record-btn" disabled class="hidden flex-1 sm:flex-initial items-center justify-center space-x-2 px-5 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-sm rounded-xl transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-                        <i class="fas fa-stop"></i>
-                        <span>停止</span>
+                    <button id="btn-record-pause" disabled class="hidden bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs sm:text-sm py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5">
+                        <i class="fas fa-pause text-slate-500"></i>
+                        <span id="pause-text">暫停</span>
+                    </button>
+                    <button id="btn-record-stop" disabled class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium text-xs sm:text-sm py-2.5 px-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5">
+                        <i class="fas fa-stop text-slate-600"></i>
+                        <span>停止辨識</span>
                     </button>
                 </div>
             </div>
+
+            <!-- 音訊檔案拖曳/上傳區塊 -->
+            <div id="drop-zone" class="bg-white rounded-2xl p-5 border-2 border-dashed border-slate-300 hover:border-indigo-400 transition-all shadow-sm flex flex-col justify-between cursor-pointer group">
+                <div class="flex flex-col items-center justify-center py-4 text-center">
+                    <div class="w-12 h-12 bg-indigo-50 group-hover:bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mb-3 transition-colors">
+                        <i class="fas fa-cloud-upload-alt text-xl"></i>
+                    </div>
+                    <p class="text-sm font-semibold text-slate-700">拖曳音訊檔案至此，或點擊選擇檔案</p>
+                    <p class="text-xs text-slate-400 mt-1">支援 mp3, wav, m4a, ogg, webm 等格式</p>
+                    <input type="file" id="audio-file-input" accept="audio/*" class="hidden">
+                </div>
+
+                <div id="file-info" class="hidden bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs">
+                    <div class="flex items-center space-x-2 truncate pr-2">
+                        <i class="fas fa-file-audio text-indigo-500"></i>
+                        <span id="file-name" class="font-medium text-slate-700 truncate">audio.mp3</span>
+                    </div>
+                    <button id="btn-transcribe-file" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm flex items-center gap-1">
+                        <i class="fas fa-play text-[10px]"></i>
+                        <span>開始轉寫</span>
+                    </button>
+                </div>
+            </div>
+
         </div>
 
-        <!-- 轉寫文字內容區塊 -->
+        <!-- 轉寫結果與工具列 -->
         <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm flex-grow flex flex-col overflow-hidden">
             
-            <!-- 工具列：字級調整、複製、下載、清除 -->
+            <!-- 頂部工具列 -->
             <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/50 flex-wrap gap-2">
                 <div class="flex items-center space-x-2 text-slate-500 text-xs">
                     <span class="font-medium text-slate-600">文字大小：</span>
@@ -191,31 +205,27 @@
                 </div>
             </div>
 
-            <!-- 文字輸出展示視窗 -->
-            <div id="transcript-container" class="p-6 flex-grow overflow-y-auto min-h-[300px] max-h-[500px] text-base leading-relaxed text-slate-800 space-y-2 select-text">
+            <!-- 文字顯示面板 -->
+            <div id="transcript-container" class="p-6 flex-grow overflow-y-auto min-h-[250px] max-h-[450px] text-base leading-relaxed text-slate-800 space-y-2 select-text relative">
                 <!-- 預設提示內容 -->
                 <div id="placeholder-text" class="h-full flex flex-col items-center justify-center text-slate-400 py-12">
-                    <i class="fas fa-comment-dots text-4xl mb-3 text-slate-300"></i>
-                    <p class="text-sm font-medium">點擊「開始錄音」並開始說話...</p>
-                    <p class="text-xs text-slate-400 mt-1">辨識後的文字將會即時顯示在這裡</p>
+                    <i class="fas fa-quote-left text-3xl mb-3 text-slate-300"></i>
+                    <p class="text-sm font-medium">開始錄音或上傳音訊檔，辨識內容將顯示於此...</p>
+                    <p class="text-xs text-slate-400 mt-1">完全於本機處理，資料絕不流出您的裝置</p>
                 </div>
-                
-                <!-- 已確定的文字區域 -->
-                <span id="final-text" class="whitespace-pre-wrap"></span>
-                
-                <!-- 即時辨識中的文字 (灰色、斜體) -->
-                <span id="interim-text" class="text-indigo-500 italic font-normal bg-indigo-50/60 px-1 rounded transition-all"></span>
+
+                <!-- 辨識文字 -->
+                <div id="transcript-text" class="whitespace-pre-wrap"></div>
             </div>
 
             <!-- 底欄：統計資訊 -->
             <div class="px-6 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs text-slate-400">
                 <div class="flex items-center space-x-4">
-                    <span>字數統計：<strong id="char-count" class="text-slate-600 font-semibold">0</strong> 字</span>
-                    <span>總段落：<strong id="para-count" class="text-slate-600 font-semibold">0</strong> 段</span>
+                    <span>總字數：<strong id="char-count" class="text-slate-600 font-semibold">0</strong> 字</span>
                 </div>
-                <div id="auto-scroll-indicator" class="flex items-center space-x-1 text-slate-400">
-                    <i class="fas fa-arrow-down text-[10px]"></i>
-                    <span>自動捲動</span>
+                <div class="flex items-center space-x-1 text-slate-400">
+                    <i class="fas fa-shield-alt text-emerald-500"></i>
+                    <span>全本機處理 (On-Device Inference)</span>
                 </div>
             </div>
         </div>
@@ -223,335 +233,457 @@
 
     <!-- 頁尾 -->
     <footer class="py-4 text-center text-xs text-slate-400 border-t border-slate-200/60 bg-white">
-        <p>基於 Web Speech API 開發 • 隱私安全：所有語音辨識均在客戶端與瀏覽器原生處理</p>
+        <p>驅動技術：Transformers.js (ONNX Web Runtime / Web Worker)</p>
     </footer>
 
-    <!-- JavaScript 核心邏輯 -->
+    <!-- 主頁面腳本：建立 Worker 避免 UI 阻塞 -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // DOM 元素引用
-            const toggleRecordBtn = document.getElementById('toggle-record-btn');
-            const recordBtnIcon = document.getElementById('record-btn-icon');
-            const recordBtnText = document.recordBtnText || document.getElementById('record-btn-text');
-            const stopRecordBtn = document.getElementById('stop-record-btn');
-            
+            const modelStatusCard = document.getElementById('model-status-card');
+            const modelStatusText = document.getElementById('model-status-text');
+            const modelStatusIcon = document.getElementById('model-status-icon');
+            const modelProgressBar = document.getElementById('model-progress-bar');
+            const modelProgressPercent = document.getElementById('model-progress-percent');
+
+            const modelSelect = document.getElementById('model-select');
             const languageSelect = document.getElementById('language-select');
-            const statusBadge = document.getElementById('status-badge');
-            const statusDot = document.getElementById('status-dot');
-            const statusText = document.getElementById('status-text');
-            const soundWaveContainer = document.getElementById('sound-wave-container');
-            const unsupportedWarning = document.getElementById('unsupported-warning');
+
+            const btnRecordStart = document.getElementById('btn-record-start');
+            const btnRecordPause = document.getElementById('btn-record-pause');
+            const btnRecordStop = document.getElementById('btn-record-stop');
+            const pauseText = document.getElementById('pause-text');
+            const recStatusBadge = document.getElementById('rec-status-badge');
+            const recTimer = document.getElementById('rec-timer');
+
+            const dropZone = document.getElementById('drop-zone');
+            const audioFileInput = document.getElementById('audio-file-input');
+            const fileInfo = document.getElementById('file-info');
+            const fileName = document.getElementById('file-name');
+            const btnTranscribeFile = document.getElementById('btn-transcribe-file');
 
             const transcriptContainer = document.getElementById('transcript-container');
             const placeholderText = document.getElementById('placeholder-text');
-            const finalTextEl = document.getElementById('final-text');
-            const interimTextEl = document.getElementById('interim-text');
+            const transcriptText = document.getElementById('transcript-text');
+            const charCount = document.getElementById('char-count');
 
             const btnCopy = document.getElementById('btn-copy');
             const btnDownload = document.getElementById('btn-download');
             const btnClear = document.getElementById('btn-clear');
-            
             const btnFontSm = document.getElementById('btn-font-sm');
             const btnFontMd = document.getElementById('btn-font-md');
             const btnFontLg = document.getElementById('btn-font-lg');
 
-            const charCountEl = document.getElementById('char-count');
-            const paraCountEl = document.getElementById('para-count');
+            const canvas = document.getElementById('visualizer-canvas');
+            const canvasCtx = canvas.getContext('2d');
 
-            // 狀態變數
+            // 狀態控制變數
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let audioContext = null;
+            let analyser = null;
+            let animFrameId = null;
+            let isModelReady = false;
             let isRecording = false;
-            let recognition = null;
-            let finalTranscript = '';
-            let interimTranscript = '';
+            let isPaused = false;
+            let recStartTime = 0;
+            let timerInterval = null;
+            let selectedFile = null;
 
-            // 檢查瀏覽器是否支援 Web Speech API
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            // Worker 線程代碼（轉換為 Blob Worker 以包含 Whisper AI 運算）
+            const workerCode = `
+                import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+                
+                env.allowLocalModels = false;
+                env.useBrowserCache = true;
 
-            if (!SpeechRecognition) {
-                unsupportedWarning.classList.remove('hidden');
-                toggleRecordBtn.disabled = true;
-                updateStatus('unsupported', '不支援此瀏覽器');
-            } else {
-                initSpeechRecognition();
+                class AutomaticSpeechRecognitionPipeline {
+                    static instance = null;
+                    static model = null;
+
+                    static async getInstance(modelName, progress_callback = null) {
+                        if (this.instance === null || this.model !== modelName) {
+                            this.model = modelName;
+                            this.instance = await pipeline('automatic-speech-recognition', modelName, { progress_callback });
+                        }
+                        return this.instance;
+                    }
+                }
+
+                self.addEventListener('message', async (event) => {
+                    const { type, data } = event.data;
+
+                    if (type === 'load') {
+                        try {
+                            const transcriber = await AutomaticSpeechRecognitionPipeline.getInstance(data.model, (p) => {
+                                self.postMessage({ type: 'download_progress', data: p });
+                            });
+                            self.postMessage({ type: 'model_ready' });
+                        } catch (err) {
+                            self.postMessage({ type: 'error', data: err.message });
+                        }
+                    } else if (type === 'transcribe') {
+                        try {
+                            const transcriber = await AutomaticSpeechRecognitionPipeline.getInstance(data.model);
+                            
+                            self.postMessage({ type: 'transcribe_start' });
+                            
+                            const output = await transcriber(data.audio, {
+                                language: data.language,
+                                task: 'transcribe',
+                                chunk_length_s: 30,
+                                stride_length_s: 5,
+                                return_timestamps: false,
+                            });
+
+                            self.postMessage({ type: 'transcribe_complete', data: output });
+                        } catch (err) {
+                            self.postMessage({ type: 'error', data: err.message });
+                        }
+                    }
+                });
+            `;
+
+            const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+            const worker = new Worker(URL.createObjectURL(workerBlob), { type: 'module' });
+
+            // 初始化與載入模型
+            function loadModel() {
+                isModelReady = false;
+                btnRecordStart.disabled = true;
+                modelStatusCard.classList.remove('hidden');
+                modelStatusText.textContent = `載入 Whisper AI 模型 (${modelSelect.value})...`;
+                modelStatusIcon.className = 'fas fa-spinner fa-spin text-indigo-500';
+                modelProgressBar.style.width = '0%';
+                modelProgressPercent.textContent = '0%';
+
+                worker.postMessage({
+                    type: 'load',
+                    data: { model: modelSelect.value }
+                });
             }
 
-            // 初始化 Speech Recognition
-            function initSpeechRecognition() {
-                recognition = new SpeechRecognition();
-                recognition.continuous = true;     // 持續聆聽
-                recognition.interimResults = true;  // 取得即時臨時結果
-                recognition.lang = languageSelect.value;
+            // 監聽 Worker 回傳訊息
+            worker.onmessage = (e) => {
+                const { type, data } = e.data;
 
-                // 開始辨識事件
-                recognition.onstart = () => {
-                    isRecording = true;
-                    updateUIState(true);
-                    updateStatus('recording', '正在聆聽中...');
-                    showToast('已開始錄音', 'success');
-                };
-
-                // 收到辨識結果
-                recognition.onresult = (event) => {
-                    interimTranscript = '';
-
-                    for (let i = event.resultIndex; i < event.results.length; ++i) {
-                        const transcript = event.results[i][0].transcript;
-                        if (event.results[i].isFinal) {
-                            // 當結果為最終判定的語句時，追加到 finalTranscript
-                            finalTranscript += transcript + '。\n';
-                        } else {
-                            // 即時辨識中的臨時文字
-                            interimTranscript += transcript;
-                        }
+                if (type === 'download_progress') {
+                    if (data.status === 'progress') {
+                        const pct = Math.round(data.progress || 0);
+                        modelProgressBar.style.width = `${pct}%`;
+                        modelProgressPercent.textContent = `${pct}%`;
+                        modelStatusText.textContent = `下載模型權重檔：${data.file} (${pct}%)`;
                     }
+                } else if (type === 'model_ready') {
+                    isModelReady = true;
+                    btnRecordStart.disabled = false;
+                    modelStatusText.textContent = '模型準備就緒 (支援離線運算)';
+                    modelStatusIcon.className = 'fas fa-check-circle text-emerald-500';
+                    modelProgressBar.style.width = '100%';
+                    modelProgressPercent.textContent = '100%';
+                    
+                    setTimeout(() => {
+                        modelStatusCard.classList.add('hidden');
+                    }, 3000);
+                    showToast('Whisper AI 模型載入成功！', 'success');
+                } else if (type === 'transcribe_start') {
+                    showToast('AI 正全力轉寫中...', 'info');
+                    recStatusBadge.textContent = '語音轉寫中';
+                    recStatusBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 animate-pulse';
+                } else if (type === 'transcribe_complete') {
+                    const text = data.text || '';
+                    appendTranscript(text);
+                    recStatusBadge.textContent = '處理完成';
+                    recStatusBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700';
+                    showToast('轉寫完成！', 'success');
+                } else if (type === 'error') {
+                    console.error('Worker 錯誤:', data);
+                    showToast('發生錯誤: ' + data, 'error');
+                    recStatusBadge.textContent = '發生錯誤';
+                    recStatusBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-700';
+                }
+            };
 
-                    renderText();
-                };
+            // 開始載入預設模型
+            loadModel();
 
-                // 發生錯誤處理
-                recognition.onerror = (event) => {
-                    console.error('語音辨識錯誤：', event.error);
-                    if (event.error === 'no-speech') {
-                        // 沒聽到聲音時不強制關閉，僅提示或忽略
-                        return;
-                    }
-                    if (event.error === 'not-allowed') {
-                        showToast('麥克風權限被拒絕', 'error');
-                        updateStatus('error', '麥克風被封鎖');
-                    } else {
-                        showToast('辨識發生錯誤: ' + event.error, 'error');
-                        updateStatus('error', '辨識錯誤');
-                    }
-                    stopRecording();
-                };
+            // 更改模型時重新載入
+            modelSelect.addEventListener('change', () => {
+                loadModel();
+            });
 
-                // 辨識中斷事件 (例如使用者長時間沒說話或網路抖動)
-                recognition.onend = () => {
-                    // 如果使用者沒有主動按停止，則自動重連保持持續錄音
-                    if (isRecording) {
-                        try {
-                            recognition.start();
-                        } catch (e) {
-                            console.log('重連錄音中...', e);
-                        }
-                    } else {
-                        updateUIState(false);
-                        updateStatus('stopped', '已停止錄音');
+            // 波形繪製
+            function drawVisualizer() {
+                if (!analyser) return;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                function render() {
+                    animFrameId = requestAnimationFrame(render);
+                    analyser.getByteFrequencyData(dataArray);
+
+                    canvas.width = canvas.clientWidth;
+                    canvas.height = canvas.clientHeight;
+
+                    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+                    const barWidth = (canvas.width / bufferLength) * 2.5;
+                    let barHeight;
+                    let x = 0;
+
+                    for (let i = 0; i < bufferLength; i++) {
+                        barHeight = (dataArray[i] / 255) * canvas.height;
+                        canvasCtx.fillStyle = `rgb(99, 102, 241)`;
+                        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                        x += barWidth + 1;
                     }
-                };
+                }
+                render();
             }
 
             // 開始錄音
-            function startRecording() {
-                if (!recognition) return;
-                try {
-                    recognition.lang = languageSelect.value;
-                    recognition.start();
-                } catch (e) {
-                    console.error('無法啟動錄音：', e);
-                }
-            }
-
-            // 停止錄音
-            function stopRecording() {
-                isRecording = false;
-                if (recognition) {
-                    recognition.stop();
-                }
-                updateUIState(false);
-                updateStatus('stopped', '已停止錄音');
-                showToast('已停止錄音', 'info');
-            }
-
-            // 渲染文字內容與更新字數
-            function renderText() {
-                // 如果已有內容，隱藏預設提示
-                if (finalTranscript || interimTranscript) {
-                    placeholderText.classList.add('hidden');
-                } else {
-                    placeholderText.classList.remove('hidden');
-                }
-
-                finalTextEl.textContent = finalTranscript;
-                interimTextEl.textContent = interimTranscript;
-
-                // 更新字數與段落統計
-                const cleanText = finalTranscript.replace(/\s+/g, '');
-                charCountEl.textContent = cleanText.length;
-
-                const paragraphs = finalTranscript.split('\n').filter(p => p.trim().length > 0);
-                paraCountEl.textContent = paragraphs.length;
-
-                // 自動捲動到底部
-                transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
-            }
-
-            // 更新 UI 狀態 (按鈕圖示、動態等)
-            function updateUIState(recording) {
-                if (recording) {
-                    toggleRecordBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'shadow-indigo-200');
-                    toggleRecordBtn.classList.add('bg-rose-600', 'hover:bg-rose-700', 'shadow-rose-200', 'recording-pulse');
-                    recordBtnIcon.className = 'fas fa-pause';
-                    recordBtnText.textContent = '暫停錄音';
-
-                    stopRecordBtn.classList.remove('hidden');
-                    stopRecordBtn.removeAttribute('disabled');
-                    soundWaveContainer.classList.remove('hidden');
-                    soundWaveContainer.classList.add('flex');
-                    languageSelect.disabled = true; // 錄音中停用切換語言
-                } else {
-                    toggleRecordBtn.classList.remove('bg-rose-600', 'hover:bg-rose-700', 'shadow-rose-200', 'recording-pulse');
-                    toggleRecordBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700', 'shadow-indigo-200');
-                    recordBtnIcon.className = 'fas fa-microphone';
-                    recordBtnText.textContent = '開始錄音';
-
-                    stopRecordBtn.classList.add('hidden');
-                    stopRecordBtn.setAttribute('disabled', 'true');
-                    soundWaveContainer.classList.remove('flex');
-                    soundWaveContainer.classList.add('hidden');
-                    languageSelect.disabled = false;
-                }
-            }
-
-            // 更新狀態指示標籤
-            function updateStatus(type, text) {
-                statusText.textContent = text;
-
-                // 清除舊樣式
-                statusBadge.className = 'flex items-center space-x-2 px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ';
-                statusDot.className = 'w-2.5 h-2.5 rounded-full ';
-
-                switch (type) {
-                    case 'recording':
-                        statusBadge.classList.add('bg-rose-50', 'text-rose-700', 'border', 'border-rose-200');
-                        statusDot.classList.add('bg-rose-500', 'animate-ping');
-                        break;
-                    case 'stopped':
-                        statusBadge.classList.add('bg-slate-100', 'text-slate-600');
-                        statusDot.classList.add('bg-slate-400');
-                        break;
-                    case 'unsupported':
-                    case 'error':
-                        statusBadge.classList.add('bg-amber-50', 'text-amber-700', 'border', 'border-amber-200');
-                        statusDot.classList.add('bg-amber-500');
-                        break;
-                    default:
-                        statusBadge.classList.add('bg-slate-100', 'text-slate-600');
-                        statusDot.classList.add('bg-slate-400');
-                }
-            }
-
-            // 事件接聽：開始/暫停按鈕
-            toggleRecordBtn.addEventListener('click', () => {
-                if (isRecording) {
-                    stopRecording();
-                } else {
-                    startRecording();
-                }
-            });
-
-            // 事件接聽：停止按鈕
-            stopRecordBtn.addEventListener('click', () => {
-                stopRecording();
-            });
-
-            // 事件接聽：語言切換
-            languageSelect.addEventListener('change', () => {
-                if (recognition) {
-                    recognition.lang = languageSelect.value;
-                    showToast(`已切換語言`, 'info');
-                }
-            });
-
-            // 清除文字
-            btnClear.addEventListener('click', () => {
-                if (!finalTranscript && !interimTranscript) return;
-
-                finalTranscript = '';
-                interimTranscript = '';
-                renderText();
-                showToast('已清除所有內容', 'info');
-            });
-
-            // 複製文字至剪貼簿
-            btnCopy.addEventListener('click', () => {
-                const textToCopy = finalTranscript + (interimTranscript ? interimTranscript : '');
-                
-                if (!textToCopy.trim()) {
-                    showToast('沒有可複製的文字', 'error');
+            async function startRecording() {
+                if (!isModelReady) {
+                    showToast('請等待 AI 模型載入完成', 'error');
                     return;
                 }
 
-                // 使用相容性較佳的複製方式
+                audioChunks = [];
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    const source = audioContext.createMediaStreamSource(stream);
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 64;
+                    source.connect(analyser);
+                    drawVisualizer();
+
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0) audioChunks.push(e.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        processAudioForTranscription(audioBlob);
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    isPaused = false;
+                    
+                    // UI 更新
+                    btnRecordStart.disabled = true;
+                    btnRecordPause.classList.remove('hidden');
+                    btnRecordPause.disabled = false;
+                    btnRecordStop.disabled = false;
+                    pauseText.textContent = '暫停';
+
+                    recStatusBadge.textContent = '正在錄音中';
+                    recStatusBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-600 animate-pulse';
+
+                    recStartTime = Date.now();
+                    timerInterval = setInterval(updateTimer, 1000);
+
+                } catch (err) {
+                    console.error('無法存取麥克風:', err);
+                    showToast('無法存取麥克風權限', 'error');
+                }
+            }
+
+            // 暫停 / 恢復錄音
+            btnRecordPause.addEventListener('click', () => {
+                if (!mediaRecorder) return;
+                if (isPaused) {
+                    mediaRecorder.resume();
+                    isPaused = false;
+                    pauseText.textContent = '暫停';
+                    recStatusBadge.textContent = '正在錄音中';
+                    showToast('已恢復錄音', 'info');
+                } else {
+                    mediaRecorder.pause();
+                    isPaused = true;
+                    pauseText.textContent = '繼續';
+                    recStatusBadge.textContent = '已暫停';
+                    showToast('已暫停錄音', 'info');
+                }
+            });
+
+            // 停止錄音
+            function stopRecording() {
+                if (mediaRecorder && isRecording) {
+                    mediaRecorder.stop();
+                    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                }
+                
+                if (animFrameId) cancelAnimationFrame(animFrameId);
+                if (audioContext) audioContext.close();
+
+                isRecording = false;
+                isPaused = false;
+                clearInterval(timerInterval);
+
+                btnRecordStart.disabled = false;
+                btnRecordPause.classList.add('hidden');
+                btnRecordStop.disabled = true;
+
+                recStatusBadge.textContent = '錄音結束，開始語音辨識...';
+                recStatusBadge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-700';
+            }
+
+            // 處理音訊資料並發送到 Worker 轉寫
+            async function processAudioForTranscription(audioBlob) {
+                const arrayBuffer = await audioBlob.arrayBuffer();
+                const offlineCtx = new OfflineAudioContext(1, 1, 16000);
+                const decodedAudio = await offlineCtx.decodeAudioData(arrayBuffer);
+                const audioData = decodedAudio.getChannelData(0);
+
+                worker.postMessage({
+                    type: 'transcribe',
+                    data: {
+                        audio: audioData,
+                        model: modelSelect.value,
+                        language: languageSelect.value
+                    }
+                });
+            }
+
+            // 更新計時器
+            function updateTimer() {
+                if (isPaused) return;
+                const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+                const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                const secs = String(elapsed % 60).padStart(2, '0');
+                recTimer.textContent = `${mins}:${secs}`;
+            }
+
+            // 檔案拖曳與選擇處理
+            dropZone.addEventListener('click', () => audioFileInput.click());
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-indigo-500', 'bg-indigo-50/50');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+                if (e.dataTransfer.files.length > 0) {
+                    handleSelectedFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            audioFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleSelectedFile(e.target.files[0]);
+                }
+            });
+
+            function handleSelectedFile(file) {
+                if (!file.type.startsWith('audio/')) {
+                    showToast('請選擇有效的音訊檔案', 'error');
+                    return;
+                }
+                selectedFile = file;
+                fileName.textContent = file.name;
+                fileInfo.classList.remove('hidden');
+                showToast('已載入音訊檔案，點擊「開始轉寫」', 'info');
+            }
+
+            btnTranscribeFile.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!selectedFile) return;
+                if (!isModelReady) {
+                    showToast('請等待 AI 模型載入完成', 'error');
+                    return;
+                }
+                processAudioForTranscription(selectedFile);
+            });
+
+            // 輸出文字處理
+            function appendTranscript(text) {
+                if (!text.trim()) return;
+                placeholderText.classList.add('hidden');
+
+                const p = document.createElement('p');
+                p.className = 'mb-2';
+                p.textContent = text;
+                transcriptText.appendChild(p);
+
+                // 更新字數
+                const currentText = transcriptText.textContent;
+                charCount.textContent = currentText.replace(/\s+/g, '').length;
+
+                // 自動滾動到底部
+                transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
+            }
+
+            // 工具列功能：複製、下載、清除
+            btnCopy.addEventListener('click', () => {
+                const text = transcriptText.textContent;
+                if (!text.trim()) {
+                    showToast('尚無可複製的文字', 'error');
+                    return;
+                }
                 const textarea = document.createElement('textarea');
-                textarea.value = textToCopy;
+                textarea.value = text;
                 textarea.style.position = 'fixed';
                 textarea.style.opacity = '0';
                 document.body.appendChild(textarea);
                 textarea.select();
-                
                 try {
                     document.execCommand('copy');
-                    showToast('已成功複製到剪貼簿！', 'success');
-                } catch (err) {
-                    showToast('複製失敗，請手動複製', 'error');
+                    showToast('已複製到剪貼簿！', 'success');
+                } catch {
+                    showToast('複製失敗', 'error');
                 } finally {
                     document.body.removeChild(textarea);
                 }
             });
 
-            // 下載文字為 .txt 檔案
             btnDownload.addEventListener('click', () => {
-                const textToDownload = finalTranscript + (interimTranscript ? interimTranscript : '');
-
-                if (!textToDownload.trim()) {
-                    showToast('沒有可下載的文字內容', 'error');
+                const text = transcriptText.textContent;
+                if (!text.trim()) {
+                    showToast('尚無可下載的文字', 'error');
                     return;
                 }
-
-                const blob = new Blob([textToDownload], { type: 'text/plain;charset=utf-8' });
+                const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                
-                // 取得目前日期時間格式作為檔名
-                const now = new Date();
-                const dateStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
-                
                 a.href = url;
-                a.download = `語音轉寫紀錄_${dateStr}.txt`;
-                document.body.appendChild(a);
+                a.download = `離線語音轉寫筆記_${new Date().toISOString().slice(0,10)}.txt`;
                 a.click();
-                document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-
-                showToast('已開始下載文件', 'success');
+                showToast('已下載 txt 筆記檔案', 'success');
             });
 
-            // 字體大小調整控制
-            const updateFontSizeButtons = (activeBtn) => {
-                [btnFontSm, btnFontMd, btnFontLg].forEach(btn => {
-                    btn.classList.remove('bg-slate-200', 'text-indigo-600');
-                    btn.classList.add('hover:bg-slate-200');
-                });
-                activeBtn.classList.add('bg-slate-200', 'text-indigo-600');
-            };
+            btnClear.addEventListener('click', () => {
+                transcriptText.textContent = '';
+                charCount.textContent = '0';
+                placeholderText.classList.remove('hidden');
+                showToast('已清除內容', 'info');
+            });
 
+            // 字級調整
             btnFontSm.addEventListener('click', () => {
                 transcriptContainer.className = transcriptContainer.className.replace(/text-\w+/, 'text-sm');
-                updateFontSizeButtons(btnFontSm);
             });
-
             btnFontMd.addEventListener('click', () => {
                 transcriptContainer.className = transcriptContainer.className.replace(/text-\w+/, 'text-base');
-                updateFontSizeButtons(btnFontMd);
             });
-
             btnFontLg.addEventListener('click', () => {
                 transcriptContainer.className = transcriptContainer.className.replace(/text-\w+/, 'text-lg');
-                updateFontSizeButtons(btnFontLg);
             });
 
-            // Toast 提示訊息處理函數
+            // 事件監聽：錄音
+            btnRecordStart.addEventListener('click', startRecording);
+            btnRecordStop.addEventListener('click', stopRecording);
+
+            // Toast 通用函數
             let toastTimeout = null;
             function showToast(message, type = 'info') {
                 const toast = document.getElementById('toast');
@@ -560,7 +692,6 @@
 
                 toastMsg.textContent = message;
 
-                // 設定圖示與顏色
                 if (type === 'success') {
                     toastIcon.className = 'fas fa-check-circle text-emerald-400 text-lg';
                 } else if (type === 'error') {
@@ -569,12 +700,10 @@
                     toastIcon.className = 'fas fa-info-circle text-sky-400 text-lg';
                 }
 
-                // 顯示 Toast
                 toast.classList.remove('translate-y-[-100px]', 'opacity-0');
                 toast.classList.add('translate-y-0', 'opacity-100');
 
                 if (toastTimeout) clearTimeout(toastTimeout);
-
                 toastTimeout = setTimeout(() => {
                     toast.classList.remove('translate-y-0', 'opacity-100');
                     toast.classList.add('translate-y-[-100px]', 'opacity-0');
